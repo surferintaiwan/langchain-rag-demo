@@ -1,0 +1,9 @@
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+interview-demo/ctbc-ai-assistant-demo/.venv/
+interview-demo/ctbc-ai-assistant-demo/.streamlit/secrets.toml

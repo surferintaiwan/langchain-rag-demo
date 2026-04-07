@@ -1,0 +1,9 @@
+{
+  "python": {
+    "version": "3.12",
+    "package_manager": "uv"
+  },
+  "streamlit": {
+    "entry": "app.py"
+  }
+}
