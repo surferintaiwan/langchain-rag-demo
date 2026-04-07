@@ -31,7 +31,7 @@
 ## 專案結構
 
 ```text
-ctbc-ai-assistant-demo/
+langchain-rag-demo/
 ├── app.py
 ├── audit.py
 ├── config.py
@@ -63,22 +63,17 @@ uv run streamlit run app.py
 
 ## 部署到 Zeabur
 
-這個專案現在已經補上 [zbpack.json](/Users/shawnpan/repos/langchain-rag-demo/interview-demo/ctbc-ai-assistant-demo/zbpack.json)，會明確告訴 Zeabur：
+這個專案現在已經補上 [zbpack.json](/Users/shawnpan/repos/langchain-rag-demo/zbpack.json)，會明確告訴 Zeabur：
 
 - 使用 Python `3.12`
 - 使用 `uv` 當套件管理器
-- 以 Streamlit 模式啟動 [app.py](/Users/shawnpan/repos/langchain-rag-demo/interview-demo/ctbc-ai-assistant-demo/app.py)
+- 以 Streamlit 模式啟動 [app.py](/Users/shawnpan/repos/langchain-rag-demo/app.py)
 
 ### 建議部署方式
 
 1. 先把專案推到 GitHub。
 2. 在 Zeabur 建立新服務並連接該 GitHub repo。
-3. 因為這個 demo 不在 repo root，請到服務設定把 Root Directory 設成：
-
-```text
-interview-demo/ctbc-ai-assistant-demo
-```
-
+3. 這個 demo 現在已經在 repo root，通常不需要另外設定 `Root Directory`。
 4. 在 Zeabur 的 Environment Variables 設定：
    - `LLM_API_KEY`
    - `LLM_BASE_URL`
@@ -96,7 +91,7 @@ interview-demo/ctbc-ai-assistant-demo
 
 - 這個專案目前沒有真正資料庫，所以不需要另外建立 Postgres 才能 demo。
 - 若未來搬到 production，再考慮把知識庫與 audit log 換成 Postgres / pgvector / vector database。
-- 若你是從同一個 monorepo 部署，Root Directory 一定要指到本 demo 的子目錄，不然 Zeabur 可能會抓不到正確的 Python 專案設定。
+- 只有在你未來再次把這個 demo 收回 monorepo 子目錄時，才需要額外設定 `Root Directory`。
 
 ## 使用 `uv` 的安裝方式
 

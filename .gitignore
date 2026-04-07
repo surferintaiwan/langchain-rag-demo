@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
+.streamlit/secrets.toml
 
 interview-demo/ctbc-ai-assistant-demo/.venv/
 interview-demo/ctbc-ai-assistant-demo/.streamlit/secrets.toml

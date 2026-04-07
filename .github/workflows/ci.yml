@@ -7,9 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: interview-demo/ctbc-ai-assistant-demo
 
     steps:
       - name: Checkout
