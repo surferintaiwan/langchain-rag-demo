@@ -20,7 +20,7 @@
 
 ### 3. 如果 embedding 掛掉怎麼辦？
 
-系統會自動 fallback 到 keyword retrieval。這是刻意設計的 resilience 機制，讓整個 demo 不會因為外部 embedding 服務失敗而完全不能用。
+系統會先 fallback 到本地 deterministic embedding，只有在本地 embedding 也不足時，才再退到 keyword retrieval。這是刻意設計的 resilience 機制，讓整個 demo 不會因為外部 embedding 服務失敗而完全不能用。
 
 ### 4. 為什麼回答要附來源？
 

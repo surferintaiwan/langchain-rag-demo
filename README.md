@@ -18,6 +18,73 @@
 - 找不到答案時保守拒答
 - 簡單 audit log 顯示每次互動結果
 
+## 架構圖
+
+```mermaid
+flowchart TD
+    U["使用者"] --> UI["Streamlit UI<br/>app.py"]
+    UI --> Router["Rule-based Router<br/>router.py"]
+    Router -->|"high-risk"| Escalate["人工處理 / 身份驗證提示"]
+    Router -->|"low-risk"| RAG["RAG Service<br/>rag.py"]
+
+    RAG --> KB["本地知識庫<br/>knowledge_base/*.md"]
+    KB --> Loader["文件載入與切 chunk<br/>kb_loader.py"]
+
+    RAG --> RemoteEmbed["遠端 Embedding<br/>OpenAI-compatible"]
+    RemoteEmbed -->|"成功"| VectorSearch["向量檢索"]
+    RemoteEmbed -->|"失敗"| LocalEmbed["本地 deterministic embedding fallback"]
+    LocalEmbed --> LocalVector["本地向量檢索"]
+    LocalVector -->|"不足"| Keyword["keyword retrieval fallback"]
+
+    RAG --> Chat["Chat Model<br/>LangChain + OpenAI-compatible"]
+    VectorSearch --> Answer["保守回答 + 引用片段"]
+    LocalVector --> Answer
+    Keyword --> Answer
+    Chat --> Answer
+
+    Answer --> Audit["Audit Log<br/>audit.py"]
+    Escalate --> Audit
+    Audit --> UI
+```
+
+## 使用者發問後，背後實際發生什麼事
+
+```mermaid
+sequenceDiagram
+    participant User as 使用者
+    participant App as Streamlit App
+    participant Router as Rule Router
+    participant RAG as RAG Service
+    participant KB as Knowledge Base
+    participant LLM as Chat Model
+    participant Audit as Audit Log
+
+    User->>App: 輸入問題
+    App->>Router: route_query(question)
+
+    alt High-risk
+        Router-->>App: high-risk
+        App-->>User: 不自動回答，改顯示人工處理提示
+        App->>Audit: 記錄 route / response_type
+    else Low-risk
+        Router-->>App: low-risk
+        App->>RAG: answer_low_risk_question(question)
+        RAG->>KB: 載入 FAQ chunks
+        RAG->>RAG: 嘗試遠端 embedding 檢索
+        alt 遠端 embedding 失敗
+            RAG->>RAG: 改用本地 deterministic embedding
+        end
+        alt 本地 embedding 仍不足
+            RAG->>RAG: 改用 keyword retrieval
+        end
+        RAG->>LLM: 以檢索結果組 prompt
+        LLM-->>RAG: 保守回答
+        RAG-->>App: answer + sources + retrieval_mode
+        App-->>User: 顯示回答與引用片段
+        App->>Audit: 記錄 route / has_retrieval / response_type
+    end
+```
+
 ## 系統流程
 
 1. 使用者在畫面輸入問題。
@@ -27,6 +94,16 @@
 5. 若有 `LLM_API_KEY` 與 `LLM_BASE_URL`，使用 LangChain 串 OpenAI-compatible endpoint 產生回答。
 6. 若沒有設定或遠端 embedding 失敗，系統會自動退回本地 deterministic embedding，再不行才退到 keyword retrieval。
 7. 每次互動都寫入簡單 audit log。
+
+## 模組職責
+
+- `app.py`: Streamlit UI、session state、訊息顯示、audit log 顯示
+- `router.py`: 風險分流規則，決定 `low-risk` 或 `high-risk`
+- `rag.py`: 最小 RAG 主流程、檢索 fallback、回答生成
+- `kb_loader.py`: 讀取 markdown FAQ 並切成 chunks
+- `llm_client.py`: 建立 LangChain chat model / embeddings client
+- `audit.py`: 定義與累積 audit log entry
+- `config.py`: 讀取環境變數與 mode 判斷
 
 ## 專案結構
 
@@ -92,6 +169,7 @@ uv run streamlit run app.py
 - 這個專案目前沒有真正資料庫，所以不需要另外建立 Postgres 才能 demo。
 - 若未來搬到 production，再考慮把知識庫與 audit log 換成 Postgres / pgvector / vector database。
 - 只有在你未來再次把這個 demo 收回 monorepo 子目錄時，才需要額外設定 `Root Directory`。
+- Zeabur AI Hub 的 `chat` 路徑已可正常運作；`embedding` 支援則可能因 provider / model 組合而異，所以 PoC 內建 fallback。
 
 ## 使用 `uv` 的安裝方式
 
@@ -136,6 +214,15 @@ uv run streamlit run app.py
 
 README 中這組設定可直接用於 Zeabur AI Hub；若你改用其他 OpenAI-compatible provider，也可沿用同一套方式。
 
+### Live mode 的真實行為
+
+- `chat`：優先使用遠端 OpenAI-compatible chat model
+- `embedding`：先嘗試遠端 OpenAI-compatible embedding
+- 若遠端 embedding 失敗：退回本地 deterministic embedding
+- 若本地 embedding 仍找不到足夠相關內容：再退到 keyword retrieval
+
+這代表就算 provider 端的 embedding 支援不穩定，整個 demo 仍然能持續運作並展示完整流程。
+
 ## 環境變數說明
 
 - `LLM_API_KEY`: Zeabur AI Hub API key
@@ -150,6 +237,7 @@ README 中這組設定可直接用於 Zeabur AI Hub；若你改用其他 OpenAI-
 - 沒有真實身份驗證
 - high-risk 問題顯示「人工處理」只是分流結果，不代表真的有工單系統
 - mock mode 的回答是基於本地文件整理，不代表真實模型推理
+- 本地 deterministic embedding fallback 是 PoC 的 resiliency 設計，不代表 production 的最終 embedding 架構
 
 ## 哪些是 PoC，不是 production
 
@@ -213,3 +301,4 @@ README 中這組設定可直接用於 Zeabur AI Hub；若你改用其他 OpenAI-
 - 若遠端 embedding API 初始化或查詢失敗，系統會先回退到本地 deterministic embedding。
 - 若連本地 embedding 都不足以找出相關段落，才會再退到 keyword retrieval。
 - 這些 fallback 是刻意保留的，避免 demo 因為外部服務波動而整體失效。
+- 側邊欄會顯示目前實際使用的檢索策略與 provider 錯誤詳情，方便 demo 時解釋系統正在怎麼運作。
