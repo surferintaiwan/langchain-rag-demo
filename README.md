@@ -25,7 +25,7 @@
 3. 若為 high-risk，系統不自動回答，直接顯示需人工處理或身份驗證。
 4. 若為 low-risk，`rag.py` 會載入本地 FAQ 文件做檢索。
 5. 若有 `LLM_API_KEY` 與 `LLM_BASE_URL`，使用 LangChain 串 OpenAI-compatible endpoint 產生回答。
-6. 若沒有設定或 embedding 失敗，系統會自動退回 mock / keyword retrieval。
+6. 若沒有設定或遠端 embedding 失敗，系統會自動退回本地 deterministic embedding，再不行才退到 keyword retrieval。
 7. 每次互動都寫入簡單 audit log。
 
 ## 專案結構
@@ -110,7 +110,7 @@ uv run streamlit run app.py
 
 - 不呼叫外部模型
 - 不做真實 embedding API 呼叫
-- 使用本地 FAQ + keyword retrieval
+- 使用本地 FAQ + deterministic embedding retrieval
 - 以模板化方式整理回答
 
 這讓 demo 即使在沒有 API key 的情況下也可以完整展示。
@@ -210,5 +210,6 @@ README 中這組設定可直接用於 Zeabur AI Hub；若你改用其他 OpenAI-
 
 ## 備註
 
-- 若 embedding API 初始化或查詢失敗，系統會自動回退到 keyword retrieval。
-- 這個 fallback 是刻意保留的，避免 demo 因為外部服務波動而整體失效。
+- 若遠端 embedding API 初始化或查詢失敗，系統會先回退到本地 deterministic embedding。
+- 若連本地 embedding 都不足以找出相關段落，才會再退到 keyword retrieval。
+- 這些 fallback 是刻意保留的，避免 demo 因為外部服務波動而整體失效。

@@ -16,6 +16,7 @@ def test_rag_returns_answer_for_supported_question() -> None:
     assert result.response_type == "rag_answer"
     assert result.has_retrieval is True
     assert result.sources
+    assert result.retrieval_mode == "local_embedding"
 
 
 def test_rag_falls_back_for_unknown_question() -> None:

@@ -31,11 +31,9 @@ def render_sidebar(service: BankRAGService) -> None:
     st.sidebar.write(f"Embedding Model：`{settings.llm_embedding_model}`")
     st.sidebar.write(f"API Key：`{settings.masked_api_key}`")
     st.sidebar.write(f"知識文件數：`{len(service.documents)}`")
-    st.sidebar.write(
-        f"檢索策略：`{'embedding retrieval' if service.embedding_ready else 'keyword retrieval'}`"
-    )
+    st.sidebar.write(f"檢索策略：`{service.retrieval_backend_label}`")
     if service.embedding_error:
-        st.sidebar.warning("Embedding 發生錯誤，系統已自動切回 keyword retrieval。")
+        st.sidebar.warning("Embedding 發生錯誤，系統已自動切回本地 embedding fallback。")
     if service.chat_error:
         st.sidebar.warning("Chat API 發生錯誤，系統已自動切回 mock response。")
 

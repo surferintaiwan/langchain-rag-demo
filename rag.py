@@ -1,3 +1,4 @@
+import hashlib
 import math
 import re
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from llm_client import build_chat_model, build_embeddings
 
 
 MIN_RELEVANCE_SCORE = 0.12
+LOCAL_EMBEDDING_DIM = 256
 
 
 class RAGResult:
@@ -44,15 +46,20 @@ class BankRAGService:
         self.knowledge_base_dir = Path(knowledge_base_dir)
         self.documents = load_knowledge_base(self.knowledge_base_dir)
         self.chat_model = build_chat_model(settings)
-        self.embeddings = build_embeddings(settings)
+        self.remote_embeddings = build_embeddings(settings)
         self.embedding_ready = False
         self.embedding_error: Optional[str] = None
         self.chat_error: Optional[str] = None
         self.document_vectors: List[List[float]] = []
+        self.local_document_vectors: List[List[float]] = []
         self.keyword_terms = [self._to_search_terms(doc.page_content) for doc in self.documents]
+        self.retrieval_backend_label = "keyword retrieval"
 
-        if self.embeddings:
-            self._prepare_embeddings()
+        if self.remote_embeddings:
+            self._prepare_remote_embeddings()
+
+        if not self.embedding_ready:
+            self._prepare_local_embeddings()
 
     def answer_low_risk_question(self, question: str) -> RAGResult:
         retrieved_chunks, retrieval_mode = self._retrieve(question, top_k=3)
@@ -98,21 +105,32 @@ class BankRAGService:
             retrieval_mode=retrieval_mode,
         )
 
-    def _prepare_embeddings(self) -> None:
+    def _prepare_remote_embeddings(self) -> None:
         try:
-            self.document_vectors = self.embeddings.embed_documents(
+            self.document_vectors = self.remote_embeddings.embed_documents(
                 [doc.page_content for doc in self.documents]
             )
             self.embedding_ready = True
+            self.retrieval_backend_label = "remote embedding retrieval"
         except Exception as exc:
             self.embedding_ready = False
             self.embedding_error = str(exc)
             self.document_vectors = []
 
+    def _prepare_local_embeddings(self) -> None:
+        self.local_document_vectors = [
+            self._local_embed_text(doc.page_content) for doc in self.documents
+        ]
+        self.embedding_ready = True
+        if self.embedding_error:
+            self.retrieval_backend_label = "local embedding fallback"
+        else:
+            self.retrieval_backend_label = "local embedding retrieval"
+
     def _retrieve(self, question: str, top_k: int = 3) -> Tuple[List[RetrievedChunk], str]:
-        if self.embedding_ready and self.embeddings and self.document_vectors:
+        if self.remote_embeddings and self.document_vectors:
             try:
-                query_vector = self.embeddings.embed_query(question)
+                query_vector = self.remote_embeddings.embed_query(question)
                 ranked = []
                 for vector, document in zip(self.document_vectors, self.documents):
                     score = self._cosine_similarity(query_vector, vector)
@@ -122,7 +140,20 @@ class BankRAGService:
                 return filtered[:top_k], "embedding"
             except Exception as exc:
                 self.embedding_error = str(exc)
-                self.embedding_ready = False
+                self.document_vectors = []
+                self._prepare_local_embeddings()
+
+        if self.local_document_vectors:
+            query_vector = self._local_embed_text(question)
+            ranked = []
+            for vector, document in zip(self.local_document_vectors, self.documents):
+                score = self._cosine_similarity(query_vector, vector)
+                ranked.append(RetrievedChunk(document=document, score=score))
+            ranked.sort(key=lambda item: item.score, reverse=True)
+            filtered = [item for item in ranked if item.score >= MIN_RELEVANCE_SCORE]
+            if filtered:
+                return filtered[:top_k], "local_embedding"
+            self.retrieval_backend_label = "keyword retrieval fallback"
 
         ranked = []
         query_terms = self._to_search_terms(question)
@@ -131,6 +162,7 @@ class BankRAGService:
             ranked.append(RetrievedChunk(document=document, score=score))
         ranked.sort(key=lambda item: item.score, reverse=True)
         filtered = [item for item in ranked if item.score >= MIN_RELEVANCE_SCORE]
+        self.embedding_ready = False
         return filtered[:top_k], "keyword"
 
     def _generate_live_answer(self, question: str, documents: Sequence[Document]) -> str:
@@ -182,6 +214,16 @@ class BankRAGService:
         if len(compact) <= limit:
             return compact
         return f"{compact[:limit].rstrip()}..."
+
+    def _local_embed_text(self, text: str) -> List[float]:
+        vector = [0.0] * LOCAL_EMBEDDING_DIM
+        for term in self._to_search_terms(text):
+            digest = hashlib.md5(term.encode("utf-8")).digest()
+            index = int.from_bytes(digest[:2], "big") % LOCAL_EMBEDDING_DIM
+            sign = 1.0 if digest[2] % 2 == 0 else -1.0
+            weight = 1.0 + min(len(term), 4) * 0.2
+            vector[index] += sign * weight
+        return vector
 
     @staticmethod
     def _to_search_terms(text: str) -> set[str]:
